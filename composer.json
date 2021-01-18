@@ -16,6 +16,7 @@
     "autoload": {
         "psr-4": {
             "Ricubai\\WPAuth\\": "packages/"
-        }
+        },
+        "files": ["packages/functions.php"]
     }
 }
