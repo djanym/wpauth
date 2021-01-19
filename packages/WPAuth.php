@@ -27,6 +27,134 @@ class WPAuth
     }
 
     /**
+     * Sets current user variable from auth session.
+     * User should be logged in. Otherwise no user will be set.
+     */
+    public function set_current_user_session()
+    {
+        global $current_user;
+
+        // Checks if a user already set, then skip
+        if (
+            isset($current_user)
+            && ($current_user instanceof User)
+            && ($current_user->ID)
+        ) {
+            // Already set. Nothing todo.
+            // return $current_user;
+            return;
+        }
+
+        // Sets current user variable from auth session cookie.
+        $user = $this->get_current_user_session_from_cookie();
+        if ($user instanceof User && $user->ID) {
+            $current_user = $user;
+        }
+    }
+
+    /**
+     * Gets logged in user. Checks auth cookie.
+     *
+     * @return User|false User on success, false on failure.
+     * @global string $auth_secure_cookie
+     */
+    private function get_current_user_session_from_cookie()
+    {
+        $user_id = $this->validate_auth_cookie('logged_in');
+        if ($user_id) {
+            return new User($user_id);
+        }
+
+//    clear_auth_cookie();
+        return false;
+//
+//    global $auth_secure_cookie;
+//
+//    if ($auth_secure_cookie) {
+//        $auth_cookie = SECURE_AUTH_COOKIE;
+//    } else {
+//        $auth_cookie = AUTH_COOKIE;
+//    }
+//
+//    if (!empty($_COOKIE[$auth_cookie])) {
+//        return new WP_Error('expired_session', __('Please log in again.'));
+//    }
+//    // If the cookie is not set, be silent.
+//
+//    return $user;
+    }
+
+    /**
+     * Validates authentication cookie.
+     *
+     * The checks include making sure that the authentication cookie is set and
+     * pulling in the contents (if $cookie is not used).
+     *
+     * Makes sure the cookie is not expired. Verifies the hash in cookie is what is
+     * should be and compares the two.
+     *
+     * @param string $cookie Optional. If used, will validate contents instead of cookie's.
+     * @param string $scheme Optional. The cookie scheme to use: 'secure_auth', or 'logged_in'.
+     * @return false|int False if invalid cookie, user ID if valid.
+     * @global int $login_grace_period
+     *
+     * @since 2.5.0
+     *
+     */
+    private function validate_auth_cookie($scheme = 'logged_in')
+    {
+        $cookie_elements = self::parse_auth_cookie($scheme);
+        if (!$cookie_elements) {
+            return false;
+        }
+
+        $scheme = $cookie_elements['scheme'];
+        $username = $cookie_elements['username'];
+        $hmac = $cookie_elements['hmac'];
+        $token = $cookie_elements['token'];
+        $expired = $cookie_elements['expiration'];
+        $expiration = $cookie_elements['expiration'];
+
+//    // Allow a grace period for POST and Ajax requests
+//    if (wp_doing_ajax() || 'POST' == $_SERVER['REQUEST_METHOD']) {
+//        $expired += HOUR_IN_SECONDS;
+//    }
+
+        // Fires once an authentication cookie has expired.
+        if ($expired < time()) {
+            return false;
+        }
+
+        $user = $this->get_user_by('login', $username);
+        // Fires if a bad username is entered in the user authentication process.
+        if (!$user) {
+            return false;
+        }
+
+        $pass_frag = substr($user['user_pass'], 8, 4);
+        $key = \DH::get_hash($username . '|' . $pass_frag . '|' . $expiration . '|' . $token, $scheme);
+        $hash = hash_hmac('sha256', $username . '|' . $expiration . '|' . $token, $key);
+
+        // Fires if a bad authentication cookie hash is encountered.
+        if (!hash_equals($hash, $hmac)) {
+            return false;
+        }
+
+        // @todo: what's this exactly? Shoulw we should clear cookies if they are expired.
+        $manager = WPSessionTokens::get_instance($user['ID']);
+        if (!$manager->verify($token)) {
+            return false;
+        }
+
+//    // Ajax/POST grace period set above
+//    if ($expiration < time()) {
+//        $GLOBALS['login_grace_period'] = 1;
+//    }
+
+        return $user['ID'];
+    }
+
+    /**
      * Authenticates and logs a user in with 'remember' capability.
      *
      * The credentials is an array that has 'user_login', 'user_password', and
@@ -322,5 +450,41 @@ class WPAuth
         $key = \DH::get_hash($user['user_login'] . '|' . $pass_frag . '|' . $expiration . '|' . $token, $scheme);
         $hash = hash_hmac('sha256', $user['user_login'] . '|' . $expiration . '|' . $token, $key);
         return $user['user_login'] . '|' . $expiration . '|' . $token . '|' . $hash;
+    }
+
+    /**
+     * Parses a cookie into its components.
+     *
+     * @param string $cookie Authentication cookie.
+     * @param string $scheme Optional. The cookie scheme to use: 'auth', 'secure_auth', or 'logged_in'.
+     * @return array|false Authentication cookie components.
+     */
+    private static function parse_auth_cookie($scheme = '')
+    {
+        switch ($scheme) {
+            case 'secure_auth':
+                $cookie_name = SECURE_AUTH_KEY;
+                break;
+            case 'logged_in':
+                $cookie_name = LOGGED_IN_KEY;
+                break;
+            default:
+                $cookie_name = SECURE_AUTH_KEY;
+                $scheme = 'secure_auth';
+        }
+
+        if (empty($_COOKIE[$cookie_name])) {
+            return false;
+        }
+        $cookie = $_COOKIE[$cookie_name];
+
+        $cookie_elements = explode('|', $cookie);
+        if (count($cookie_elements) !== 4) {
+            return false;
+        }
+
+        [$username, $expiration, $token, $hmac] = $cookie_elements;
+
+        return compact('username', 'expiration', 'token', 'hmac', 'scheme');
     }
 }
