@@ -2,6 +2,14 @@
 
 namespace Ricubai\WPAuth;
 
+/**
+ * Class DB
+ * Common methods:
+ *      query()->fetchArray();
+ *      query()->fetchAll();
+ *      query()->numRows();
+ * @package Ricubai\WPAuth
+ */
 class DB
 {
     public $connection;

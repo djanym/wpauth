@@ -69,20 +69,17 @@ class WPAuth
         }
 
         // Check if user exists by username/email and password.
-        $check = compare_user_hash_pass($user['ID'], $user['user_pass'], $credentials['password']);
+        $check = $this->compare_user_hash_pass($user['ID'], $user['user_pass'], $credentials['password']);
 
         if (is_error($check)) {
             return $check;
         }
 
-        echo 888;
-        die;
-
         // Set authentification (logged in) cookie.
-        set_auth_cookie($user['ID'], $credentials['remember']);
+        $this->set_auth_cookie($user['ID'], $credentials['remember']);
 
         if (empty($_COOKIE[LOGGED_IN_KEY]) && headers_sent()) { // @TODO: test this.
-            return new eError(
+            return new FormError(
                 'test_cookie',
                 sprintf(
                     __(
@@ -134,6 +131,7 @@ class WPAuth
 
     /**
      * Check if user submitted password is valid by comparing it with DB.
+     * Used for login via form.
      *
      * @param int $user_id User's DB ID
      * @param string $hash User's stored hashed password
@@ -161,7 +159,7 @@ class WPAuth
         global $wp_hasher;
 
         if (empty($wp_hasher)) {
-            require_once(ABSPATH . '/inc/class-phpass.php');
+//            require_once(ABSPATH . '/inc/class-phpass.php');
             // By default, use the portable hash from phpass
             $wp_hasher = new PasswordHash(8, true);
         }
@@ -171,10 +169,6 @@ class WPAuth
         if (!$check) {
             // @TODO: check auth cookie
             return new FormError(
-                'empty_password',
-                __('<strong>ERROR</strong>: The password field is empty.')
-            );
-            return new eError(
                 'incorrect_password',
                 __('<strong>ERROR</strong>: The password you entered is incorrect.')
                 .
@@ -185,5 +179,51 @@ class WPAuth
         }
 
         return true;
+    }
+
+
+    /**
+     * Sets the authentication cookies based on user ID.
+     *
+     * The $remember parameter increases the time that the cookie will be kept. The
+     * default the cookie is kept without remembering is two days. When $remember is
+     * set, the cookies will be kept for 14 days or two weeks.
+     *
+     * @param int $user_id User ID.
+     * @param bool $remember Whether to remember the user.
+     * @param string $token Optional. User's session token to use for this cookie.
+     */
+    private function set_auth_cookie($user_id, $remember = false, $token = '')
+    {
+        if ($remember) {
+            // Sets duration of the authentication cookie expiration period.
+            $expiration = time() + (14 * 3600 * 24);
+            /*
+             * Ensure the browser will continue to send the cookie after the expiration time is reached.
+             * Needed for the login grace period in wp_validate_auth_cookie().
+             */
+            $expire = $expiration + (12 * 3600);
+        } else {
+            // Sets 2 days for cookie.
+            $expiration = time() + (2 * 3600 * 24);
+            $expire = $expiration;
+        }
+
+        WPSessionTokens::get_instance($user_id); die;
+
+        if ('' === $token) {
+            $manager = WPSessionTokens::get_instance($user_id);
+            $token = $manager->create($expiration);
+        }
+
+        $auth_cookie_value = generate_auth_cookie_value($user_id, $expiration, 'secure_auth', $token);
+        $logged_in_cookie_value = generate_auth_cookie_value($user_id, $expiration, 'logged_in', $token);
+
+        echo 765; die;
+
+        // Why this cookie?
+        setcookie(SECURE_AUTH_KEY, $auth_cookie_value, $expire, '/', DOMAIN_NAME, true, true);
+        // Check if logged in
+        setcookie(LOGGED_IN_KEY, $logged_in_cookie_value, $expire, '/', DOMAIN_NAME, true, true);
     }
 }

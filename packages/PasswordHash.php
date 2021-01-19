@@ -25,13 +25,11 @@
 # requirements (there can be none), but merely suggestions.
 #
 
+namespace Ricubai\WPAuth;
+
 /**
  * Portable PHP password hashing framework.
- *
- * @package phpass
- * @version 0.3 / WordPress
  * @link http://www.openwall.com/phpass/
- * @since 2.5.0
  */
 class PasswordHash
 {
