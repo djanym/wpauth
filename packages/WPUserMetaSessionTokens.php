@@ -28,7 +28,7 @@ class WPUserMetaSessionTokens extends WPSessionTokens
      */
     protected function get_sessions()
     {
-        $sessions = wp_get_user_meta($this->user_id, 'session_tokens');
+        $sessions = wpdb()->get_user_meta($this->user_id, 'session_tokens');
 
         if (!is_array($sessions)) {
             return array();
@@ -103,9 +103,9 @@ class WPUserMetaSessionTokens extends WPSessionTokens
     protected function update_sessions($sessions)
     {
         if ($sessions) {
-            wp_update_user_meta($this->user_id, 'session_tokens', $sessions);
+            wpdb()->update_user_meta($this->user_id, 'session_tokens', $sessions);
         } else {
-            wp_delete_user_meta($this->user_id, 'session_tokens');
+            wpdb()->delete_user_meta($this->user_id, 'session_tokens');
         }
     }
 

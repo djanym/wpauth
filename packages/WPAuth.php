@@ -6,11 +6,15 @@ use Ricubai\PHPHelpers\FormError;
 
 class WPAuth
 {
-    /*
-     * @var \Ricubai\WPAuth\DB
+    /**
+     * DB class
+     * @var DB
      */
     public $wpdb;
 
+    /**
+     * @var \mysqli
+     */
     public $con;
 
     public function connect_db()
@@ -130,6 +134,76 @@ class WPAuth
     }
 
     /**
+     * Retrieve user meta field for a user from WP DB.
+     *
+     * @param int $user_id User ID.
+     * @param string $key The meta key to retrieve.
+     * @return mixed Will be value of meta data field.
+     */
+    public function get_user_meta($user_id, $key)
+    {
+        $result = $this->wpdb->query(
+            "SELECT meta_value FROM wp_usermeta
+            WHERE user_id = '" . mysqli_real_escape_string($this->con, $user_id) . "'
+            AND meta_key = '" . mysqli_real_escape_string($this->con, $key) . "' "
+        )->fetchArray();
+
+        if (!$result) {
+            return false;
+        }
+
+        $value = $result['meta_value'];
+        $value = \DH::maybe_unserialize($value);
+
+        return $value;
+    }
+
+    /**
+     * Retrieve user meta field for a user from WP DB.
+     *
+     * @param int $user_id User ID.
+     * @param string $key The meta key to retrieve.
+     * @return mixed Will be value of meta data field.
+     */
+    public function update_user_meta($user_id, $key, $value)
+    {
+        if (!$key) {
+            return false;
+        }
+
+        $value = wp_unslash($value);
+        $value = \DH::maybe_serialize($value);
+
+        // Check for existing row
+        $q = $this->wpdb->query(
+            "SELECT umeta_id FROM wp_usermeta
+            WHERE user_id = '" . mysqli_real_escape_string($this->con, $user_id) . "'
+                AND meta_key = '" . mysqli_real_escape_string($this->con, $key) . "' "
+        )->fetchArray();
+
+        // If nothing found then insert a new one.
+        if (!$q || !$q['umeta_id']) {
+            $this->wpdb->query(
+                "INSERT INTO wp_usermeta
+                SET user_id = '" . mysqli_real_escape_string($this->con, $user_id) . "',
+                    meta_key = '" . mysqli_real_escape_string($this->con, $key) . "',
+                    meta_value = '" . mysqli_real_escape_string($this->con, $value) . "' "
+            );
+            return true;
+        }
+
+        // Update value
+        $this->wpdb->query(
+            "UPDATE wp_usermeta
+            SET meta_value = '" . mysqli_real_escape_string($this->con, $value) . "'
+            WHERE user_id = '" . mysqli_real_escape_string($this->con, $user_id) . "'
+                AND meta_key = '" . mysqli_real_escape_string($this->con, $key) . "' "
+        );
+
+        return true;
+    }
+
+    /**
      * Check if user submitted password is valid by comparing it with DB.
      * Used for login via form.
      *
@@ -141,7 +215,6 @@ class WPAuth
      */
     private function compare_user_hash_pass($user_id, $hash, $password)
     {
-
         if (empty($password)) {
             return new FormError(
                 'empty_password',
@@ -209,21 +282,45 @@ class WPAuth
             $expire = $expiration;
         }
 
-        WPSessionTokens::get_instance($user_id); die;
-
         if ('' === $token) {
             $manager = WPSessionTokens::get_instance($user_id);
             $token = $manager->create($expiration);
         }
 
-        $auth_cookie_value = generate_auth_cookie_value($user_id, $expiration, 'secure_auth', $token);
-        $logged_in_cookie_value = generate_auth_cookie_value($user_id, $expiration, 'logged_in', $token);
-
-        echo 765; die;
+        $auth_cookie_value = $this->generate_auth_cookie_value($user_id, $expiration, 'secure_auth', $token);
+        $logged_in_cookie_value = $this->generate_auth_cookie_value($user_id, $expiration, 'logged_in', $token);
 
         // Why this cookie?
         setcookie(SECURE_AUTH_KEY, $auth_cookie_value, $expire, '/', DOMAIN_NAME, true, true);
         // Check if logged in
         setcookie(LOGGED_IN_KEY, $logged_in_cookie_value, $expire, '/', DOMAIN_NAME, true, true);
+    }
+
+    /**
+     * Generates authentication cookie contents.
+     *
+     * @param int $user_id User ID.
+     * @param int $expiration The time the cookie expires as a UNIX timestamp.
+     * @param string $scheme Optional. The cookie scheme to use: 'auth', 'secure_auth', or 'logged_in'.
+     *                           Default 'auth'.
+     * @param string $token User's session token to use for this cookie.
+     * @return string Authentication cookie contents. Empty string if user does not exist.
+     */
+    private function generate_auth_cookie_value($user_id, $expiration, $scheme = 'secure_auth', $token = '')
+    {
+        $user = $this->get_user_by('id', $user_id);
+        if (!$user) {
+            return false;
+        }
+
+        if (!$token) {
+            $manager = WPSessionTokens::get_instance($user_id);
+            $token = $manager->create($expiration);
+        }
+
+        $pass_frag = substr($user['user_pass'], 8, 4);
+        $key = \DH::get_hash($user['user_login'] . '|' . $pass_frag . '|' . $expiration . '|' . $token, $scheme);
+        $hash = hash_hmac('sha256', $user['user_login'] . '|' . $expiration . '|' . $token, $key);
+        return $user['user_login'] . '|' . $expiration . '|' . $token . '|' . $hash;
     }
 }
