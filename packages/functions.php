@@ -14,7 +14,7 @@ if (!function_exists('set_wpdb')):
 endif;
 
 if (!function_exists('wpauth')):
-    /*
+    /**
      * @return Ricubai\WPAuth\WPAuth Return a global instance of WPAuth.
      */
     function wpauth(): \Ricubai\WPAuth\WPAuth
@@ -25,7 +25,7 @@ if (!function_exists('wpauth')):
 endif;
 
 if (!function_exists('wpdb')):
-    /*
+    /**
      * @return Ricubai\WPAuth\WPAuth Return a global instance of WPAuth.
      */
     function wpdb(): \Ricubai\WPAuth\WPAuth
