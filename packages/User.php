@@ -6,16 +6,12 @@ class User
 {
     /**
      * User data container.
-     *
-     * @since 2.0.0
      * @var object
      */
     public $data;
 
     /**
      * The user's ID.
-     *
-     * @since 2.1.0
      * @var int
      */
     public $ID = 0;
@@ -95,6 +91,7 @@ class User
     {
         $this->data = $data;
         $this->ID = (int)$data['ID'];
+        $this->for_site();
     }
 
     /**
@@ -334,6 +331,23 @@ class User
     }
 
     /**
+     * Gets the available user capabilities data.
+     *
+     * @return bool[] List of capabilities keyed by the capability name,
+     *                e.g. array( 'edit_posts' => true, 'delete_posts' => false ).
+     */
+    private function get_caps_data()
+    {
+        $caps = wpauth()->get_user_meta($this->ID, $this->cap_key, true);
+
+        if (!is_array($caps)) {
+            return array();
+        }
+
+        return $caps;
+    }
+
+    /**
      * Retrieves all of the capabilities of the roles of the user, and merges them with individual user capabilities.
      *
      * All of the capabilities of the roles of the user are merged with the user's individual capabilities. This means
@@ -341,19 +355,10 @@ class User
      *
      * @return bool[] Array of key/value pairs where keys represent a capability name and boolean values
      *                represent whether the user has that capability.
-     * @since 2.0.0
-     *
      */
     public function get_role_caps()
     {
-        $switch_site = false;
-        if (is_multisite() && $this->site_id != get_current_blog_id()) {
-            $switch_site = true;
-
-            switch_to_blog($this->site_id);
-        }
-
-        $wp_roles = wp_roles();
+        $wp_roles = wpauth()::wp_roles();
 
         // Filter out caps that are not role names and assign to $this->roles.
         if (is_array($this->caps)) {
@@ -367,10 +372,6 @@ class User
             $this->allcaps = array_merge((array)$this->allcaps, (array)$the_role->capabilities);
         }
         $this->allcaps = array_merge((array)$this->allcaps, (array)$this->caps);
-
-        if ($switch_site) {
-            restore_current_blog();
-        }
 
         return $this->allcaps;
     }
@@ -656,5 +657,17 @@ class User
         }
 
         return true;
+    }
+
+    /**
+     * Sets the site to operate on. Defaults to the current site.
+     */
+    public function for_site()
+    {
+        $this->cap_key = wpauth()->db_prefix . 'capabilities';
+
+        $this->caps = $this->get_caps_data();
+
+        $this->get_role_caps();
     }
 }

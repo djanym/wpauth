@@ -17,12 +17,22 @@ class WPAuth
      */
     public $con;
 
+    public $db_prefix;
+    public $users_table;
+    public $usermeta_table;
+    public $options_table;
+
     public function connect_db()
     {
         if (!$this->wpdb) {
 //            $this->wpdb = new \mysqli(WPDB_HOST, WPDB_USER, WPDB_PASSWORD, WPDB_NAME);
             $this->wpdb = new DB(WPDB_HOST, WPDB_USER, WPDB_PASSWORD, WPDB_NAME);
             $this->con = $this->wpdb->connection;
+
+            $this->db_prefix = WPDB_PREFIX;
+            $this->users_table = WPDB_PREFIX . 'users';
+            $this->usermeta_table = WPDB_PREFIX . 'usermeta';
+            $this->options_table = WPDB_PREFIX . 'options';
         }
     }
 
@@ -332,6 +342,46 @@ class WPAuth
     }
 
     /**
+     * Retrieves an option value based on an option name.
+     *
+     * If the option does not exist, and a default value is not provided,
+     * boolean false is returned.
+     *
+     * @param string $option Name of the option to retrieve. Expected to not be SQL-escaped.
+     * @param mixed $default Optional. Default value to return if the option does not exist.
+     * @return mixed Value of the option. A value of any type may be returned, including
+     *               scalar (string, boolean, float, integer), null, array, object.
+     *               Scalar and null values will be returned as strings as long as they originate
+     *               from a database stored option value. If there is no option in the database,
+     *               boolean `false` is returned.
+     */
+    function get_option($option, $default = false)
+    {
+        $option = trim($option);
+        if (empty($option)) {
+            return false;
+        }
+
+        // Distinguish between `false` as a default, and not passing one.
+        $passed_default = func_num_args() > 1;
+
+        $result = $this->wpdb->query(
+            $this->wpdb->prepare(
+                "SELECT option_value FROM $this->options_table WHERE option_name = %s LIMIT 1",
+                $option
+            )
+        )->fetchArray();
+
+        if (isset($result['option_value'])) {
+            $value = $result['option_value'];
+        } else {
+            $value = null;
+        }
+
+        return \DH::maybe_unserialize($value);
+    }
+
+    /**
      * Check if user submitted password is valid by comparing it with DB.
      * Used for login via form.
      *
@@ -486,5 +536,22 @@ class WPAuth
         [$username, $expiration, $token, $hmac] = $cookie_elements;
 
         return compact('username', 'expiration', 'token', 'hmac', 'scheme');
+    }
+
+    /**
+     * Retrieves the global WP_Roles instance and instantiates it if necessary.
+     *
+     * @return WP_Roles WP_Roles global instance if not already instantiated.
+     * @global WP_Roles $wp_roles WordPress role management object.
+     *
+     */
+    public static function wp_roles()
+    {
+        global $wp_roles;
+
+        if (!isset($wp_roles)) {
+            $wp_roles = new WPRoles();
+        }
+        return $wp_roles;
     }
 }
